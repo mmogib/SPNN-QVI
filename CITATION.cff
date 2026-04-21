@@ -1,0 +1,44 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite both the software and the accompanying paper."
+title: "SPNN-QVI: Scaled Projection Neural Network for Quasi-Variational Inequalities"
+abstract: >-
+  Julia implementation of a scaled projection neural network for
+  quasi-variational inequalities with state-dependent constraint set
+  S(x) = m(x) + S and fixed symmetric positive-definite metric M.
+  Integrates the continuous-time dynamics dx/dt = lambda * [P_{S(x),M}(x - alpha * M * F(x)) - x]
+  using adaptive ODE integration (OrdinaryDiffEq.jl).
+type: software
+authors:
+  - family-names: Alshahrani
+    given-names: Mohammed
+    email: mshahrani@kfupm.edu.sa
+    orcid: "https://orcid.org/0000-0002-1367-646X"
+    affiliation: "King Fahd University of Petroleum and Minerals"
+  - family-names: Ansari
+    given-names: Qamrul Hasan
+    email: qhansari@kfupm.edu.sa
+    orcid: "https://orcid.org/0000-0002-0707-7372"
+    affiliation: "King Fahd University of Petroleum and Minerals"
+repository-code: "https://github.com/mmogib/SPNN-QVI"
+license: MIT
+version: "1.0.0"
+keywords:
+  - quasi-variational inequality
+  - projection neural network
+  - metric projection
+  - Lyapunov stability
+  - monotone operator
+  - projected dynamical system
+preferred-citation:
+  type: article
+  title: "Scaled Projection Neural Network for Quasi-Variational Inequalities"
+  authors:
+    - family-names: Alshahrani
+      given-names: Mohammed
+      orcid: "https://orcid.org/0000-0002-1367-646X"
+    - family-names: Ansari
+      given-names: Qamrul Hasan
+      orcid: "https://orcid.org/0000-0002-0707-7372"
+  journal: "Neural Networks"
+  year: 2026
+  notes: "Submitted"

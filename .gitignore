@@ -1,0 +1,30 @@
+# Experiment outputs — keep the folder, ignore the contents
+results/*
+!results/.gitkeep
+
+# Julia
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+/docs/build/
+/docs/site/
+/deps/deps.jl
+/deps/build.log
+/deps/downloads/
+/deps/usr/
+/deps/src/
+
+# LocalPreferences and precompile caches are machine-specific
+LocalPreferences.toml
+.CondaPkg/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Claude Code instruction file (internal)
+CLAUDE.md
