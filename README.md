@@ -1,9 +1,14 @@
 # SPNN-QVI
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19687760.svg)](https://doi.org/10.5281/zenodo.19687760)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Julia implementation accompanying the paper
 
 > **Scaled Projection Neural Network for Quasi-Variational Inequalities**
 > M. Alshahrani and Q. H. Ansari (2026), submitted to *Neural Networks*.
+
+**Software archive:** https://doi.org/10.5281/zenodo.19687760
 
 The solver integrates the continuous-time scaled projection neural network
 
@@ -80,7 +85,23 @@ Each script writes a CSV and a log into the matching subfolder under `results/`.
 
 ## Citation
 
-If you use this code, please cite both the software (see `CITATION.cff`) and the paper. A BibTeX entry will be added here once the paper has a DOI.
+If you use this code, please cite both the software and the paper.
+
+**Software (Zenodo):**
+
+```bibtex
+@software{AlshahraniAnsari_SPNNQVI_2026,
+  author  = {Alshahrani, Mohammed and Ansari, Qamrul Hasan},
+  title   = {{SPNN-QVI: Scaled Projection Neural Network for
+             Quasi-Variational Inequalities}},
+  year    = {2026},
+  version = {1.0.0},
+  doi     = {10.5281/zenodo.19687760},
+  url     = {https://doi.org/10.5281/zenodo.19687760}
+}
+```
+
+**Paper:** a BibTeX entry will be added here once the paper has a DOI.
 
 ## License
 
