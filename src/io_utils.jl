@@ -1,6 +1,6 @@
 # I/O utilities for SPNNQVI
 #
-# TeeIO: write to both a file and stdout simultaneously.
+# TeeIO: write to  both a file and stdout simultaneously.
 # Logging helpers for experiment scripts.
 
 """
@@ -15,7 +15,7 @@ end
 
 Base.write(tee::TeeIO, x::UInt8) = (write(tee.io1, x); write(tee.io2, x))
 Base.write(tee::TeeIO, x::Vector{UInt8}) = (write(tee.io1, x); write(tee.io2, x))
-Base.write(tee::TeeIO, x::SubArray{UInt8, 1}) = (write(tee.io1, x); write(tee.io2, x))
+Base.write(tee::TeeIO, x::SubArray{UInt8,1}) = (write(tee.io1, x); write(tee.io2, x))
 Base.flush(tee::TeeIO) = (flush(tee.io1); flush(tee.io2))
 Base.close(tee::TeeIO) = (flush(tee.io1); flush(tee.io2))
 
