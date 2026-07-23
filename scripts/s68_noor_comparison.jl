@@ -1,10 +1,10 @@
 # ============================================================================
-# s68: Noor (2003) Example 4.1 — QVI on ℝ²₊
+# s68: Nonlinear orthant QVI benchmark (manuscript Experiment 4)
 # ============================================================================
 #
-# Goal:   Test Problem 9 (Noor 2003, Example 4.1) from multiple initial points,
-#         including some starting outside ℝ²₊ to test projection behavior.
-#         Known solution: x̄ = (0, 0).
+# Goal:   Test Problem 9 (nonlinear orthant benchmark, adapted from the Noor
+#         2003 setting) from six initial points, including some outside ℝ²₊,
+#         to test projection behavior. Known solution: x̄ = (0, 0).
 # Output: results/noor_comparison/ — trajectory CSVs + summary
 #         results/logs/s68_noor_comparison_*.log
 #
@@ -51,7 +51,7 @@ mkpath(results_dir)
 # ── Main experiment ─────────────────────────────────────────────────────
 
 println(tee, "=" ^ 70)
-println(tee, "Problem 9: Noor (2003) Example 4.1 — QVI on R²₊")
+println(tee, "Problem 9: Nonlinear orthant QVI benchmark (Experiment 4)")
 println(tee, "  F(u) = (u₁+u₂+sin(u₁), u₁+u₂+sin(u₂))")
 println(tee, "  S = R²₊, m(u) = u/8, K_m = 0.125")
 println(tee, "  Known solution: x* = (0, 0)")

@@ -109,8 +109,10 @@ println(tee, "\n--- Equilibrium Consistency ---")
 converged_pts = [fp for (fp, x0) in zip(final_points, INIT_POINTS)
                  if norm(fp) < 1e10]  # exclude diverged
 if length(converged_pts) >= 2
-    spread = maximum(norm(p - converged_pts[1]) for p in converged_pts)
-    @printf(tee, "  Max spread among final points: %.4e\n", spread)
+    spread = maximum(norm(converged_pts[i] - converged_pts[j])
+                     for i in eachindex(converged_pts)
+                     for j in (i + 1):length(converged_pts))
+    @printf(tee, "  Max pairwise spread among final points: %.4e\n", spread)
     @printf(tee, "  Mean equilibrium: [%.6f, %.6f]\n",
             mean(p[1] for p in converged_pts), mean(p[2] for p in converged_pts))
 end

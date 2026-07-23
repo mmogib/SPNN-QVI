@@ -22,10 +22,41 @@ Fields:
     F::Function                     # Operator F(x) → vector
     m::Function                     # Translation m(x) → vector
     proj_S::Function                # Euclidean projection onto base set S
-    M::Matrix{Float64}              # Fixed SPD metric matrix
+    M::AbstractMatrix               # Fixed SPD matrix (Matrix, Diagonal, or FactorInverse)
     x0::Vector{Float64}            # Initial point
     n::Int                          # Dimension
     name::String = "unnamed"        # Problem name
+    # Optional caches (nothing → legacy behavior, M⁻¹ recomputed per projection call).
+    # When provided, Minv is the projection metric M⁻¹ (Diagonal or sparse enables
+    # the fast projection paths), lb/ub are the box bounds of S, and Mnorm = ‖M‖.
+    Minv::Union{Nothing, AbstractMatrix} = nothing
+    lb::Union{Nothing, Vector{Float64}} = nothing
+    ub::Union{Nothing, Vector{Float64}} = nothing
+    Mnorm::Float64 = NaN
+end
+
+"""
+    FactorInverse(fact, n, nrm)
+
+Lazy representation of A⁻¹ given a factorization `fact` of A: multiplication
+`FactorInverse * v` performs `fact \\ v` (never forming the dense inverse).
+`nrm` must be ‖A⁻¹‖ = 1/λ_min(A), supplied at construction (used by `opnorm`).
+Used as the matrix M = A⁻¹ for large sparse problems (e.g. the fine-grid obstacle).
+"""
+struct FactorInverse{TF} <: AbstractMatrix{Float64}
+    fact::TF
+    n::Int
+    nrm::Float64
+end
+
+Base.size(op::FactorInverse) = (op.n, op.n)
+Base.:*(op::FactorInverse, v::AbstractVector) = op.fact \ Vector{Float64}(v)
+LinearAlgebra.opnorm(op::FactorInverse) = op.nrm
+LinearAlgebra.opnorm(op::FactorInverse, p::Real) = op.nrm
+# getindex is required by the AbstractMatrix interface; O(n) per entry — avoid in hot paths.
+function Base.getindex(op::FactorInverse, i::Int, j::Int)
+    e = zeros(op.n); e[j] = 1.0
+    return (op.fact \ e)[i]
 end
 
 """

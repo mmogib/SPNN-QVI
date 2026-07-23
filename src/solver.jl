@@ -11,7 +11,11 @@ Evaluate the fixed-point map T(x) = m(x) + P_{S,M⁻¹}(x - m(x) - αMF(x)).
 function T_map(x::AbstractVector, prob::QVIProblem, cfg::SolverConfig)
     mx = prob.m(x)
     Fx = prob.F(x)
-    z = x - mx - cfg.alpha * prob.M * Fx   # argument to P_{S,M⁻¹}
+    # Legacy order (α·M)·Fx for dense M (bit-identical to the original code);
+    # operator-safe order α·(M·Fx) for Diagonal / FactorInverse / sparse M,
+    # where forming α·M densely would be wasteful or defeat the factorization.
+    MFx = prob.M isa Matrix ? cfg.alpha * prob.M * Fx : cfg.alpha * (prob.M * Fx)
+    z = x - mx - MFx                        # argument to P_{S,M⁻¹}
     p = metric_projection(z, prob)          # P_{S,M⁻¹}(z)
     return mx + p
 end
@@ -134,7 +138,14 @@ The `cfg.dt` field is ignored (adaptive stepping chooses its own steps).
 function solve_qvi_diffeq(prob::QVIProblem, cfg::SolverConfig;
                            solver = Tsit5(),
                            save_dt::Float64 = 0.1,
-                           xstar::Union{Nothing,Vector{Float64}} = nothing)
+                           xstar::Union{Nothing,Vector{Float64}} = nothing,
+                           abstol::Float64 = 1e-8,
+                           reltol::Float64 = 1e-6,
+                           terminate_on_tol::Bool = true,
+                           stop_fn = nothing,
+                           return_sol::Bool = false,
+                           compute_rs::Bool = true,
+                           dtmax_override::Union{Nothing,Float64} = nothing)
     # RHS: dx/dt = λ(T(x) - x)
     function rhs!(dx, x, p, t)
         qvi, sc = p
@@ -143,20 +154,26 @@ function solve_qvi_diffeq(prob::QVIProblem, cfg::SolverConfig;
         return nothing
     end
 
-    # Convergence callback: terminate when ‖r(x)‖ < tol
-    function check_converged(u, t, integrator)
-        qvi, sc = integrator.p
-        _, rnorm = residual(u, qvi, sc)
-        return rnorm < sc.tol
+    # Stopping: either a caller-supplied rule (evaluated at accepted endpoints),
+    # or the native residual rule ‖r(x)‖ < tol, or none.
+    cb = nothing
+    if stop_fn !== nothing
+        cb = DiscreteCallback((u, t, integrator) -> stop_fn(u, t), terminate!)
+    elseif terminate_on_tol
+        function check_converged(u, t, integrator)
+            qvi, sc = integrator.p
+            _, rnorm = residual(u, qvi, sc)
+            return rnorm < sc.tol
+        end
+        cb = DiscreteCallback(check_converged, terminate!)
     end
-    cb = DiscreteCallback(check_converged, terminate!)
 
     # Solve
     ode_prob = ODEProblem(rhs!, copy(prob.x0), (0.0, cfg.T), (prob, cfg))
     sol = solve(ode_prob, solver;
-        abstol   = 1e-8,
-        reltol   = 1e-6,
-        dtmax    = max(save_dt, 0.1),
+        abstol   = abstol,
+        reltol   = reltol,
+        dtmax    = dtmax_override === nothing ? max(save_dt, 0.1) : dtmax_override,
         saveat   = save_dt,
         callback = cb,
         maxiters = cfg.maxiter,
@@ -165,10 +182,50 @@ function solve_qvi_diffeq(prob::QVIProblem, cfg::SolverConfig;
     # Convert to same format as solve_qvi_ode
     ts = collect(sol.t)
     xs = [copy(u) for u in sol.u]
-    rs = Float64[residual(u, prob, cfg)[2] for u in sol.u]
+    rs = compute_rs ? Float64[residual(u, prob, cfg)[2] for u in sol.u] : Float64[]
     Vs = Float64[xstar === nothing ? NaN : 0.5 * norm(u - xstar)^2 for u in sol.u]
 
+    return_sol && return ts, xs, rs, Vs, sol
     return ts, xs, rs, Vs
+end
+
+"""
+    solve_qvi_fixedpoint(prob, cfg; h=1/cfg.lambda, stop_fn=nothing, maxiter=cfg.maxiter)
+
+Run the forward-Euler / Krasnoselskii--Mann iteration
+  x_{k+1} = (1 - λh) x_k + λh T(x_k),
+which at h = 1/λ is the fixed-point (Picard) iteration x_{k+1} = T(x_k)
+(for M = I: the projection algorithm of Noor 1988, Algorithm 3.1 with g = id).
+
+`stop_fn(x, k) -> Bool` is evaluated after every completed outer iterate; when
+it returns true the iteration stops with `stopped = true`. Without `stop_fn`
+the iteration runs to `maxiter` (no native stopping — callers supply the rule).
+
+Returns a NamedTuple `(x_final, iterations, time_seconds, stopped)`.
+"""
+function solve_qvi_fixedpoint(prob::QVIProblem, cfg::SolverConfig;
+                              h::Float64 = 1.0 / cfg.lambda,
+                              stop_fn = nothing,
+                              maxiter::Int = cfg.maxiter)
+    θ = cfg.lambda * h
+    @assert 0 < θ <= 1 "solve_qvi_fixedpoint requires λh ∈ (0, 1]"
+    x = copy(prob.x0)
+    t_start = time()
+    k = 0
+    stopped = false
+    for iter in 1:maxiter
+        k = iter
+        Tx = T_map(x, prob, cfg)
+        @. x = (1 - θ) * x + θ * Tx
+        if stop_fn !== nothing && stop_fn(x, k)
+            stopped = true
+            break
+        end
+        if any(!isfinite, x) || norm(x) > 1e15
+            break
+        end
+    end
+    return (x_final = x, iterations = k, time_seconds = time() - t_start, stopped = stopped)
 end
 
 """

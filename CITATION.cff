@@ -4,9 +4,13 @@ title: "SPNN-QVI: Scaled Projection Neural Network for Quasi-Variational Inequal
 abstract: >-
   Julia implementation of a scaled projection neural network for
   quasi-variational inequalities with state-dependent constraint set
-  S(x) = m(x) + S and fixed symmetric positive-definite metric M.
-  Integrates the continuous-time dynamics dx/dt = lambda * [P_{S(x),M}(x - alpha * M * F(x)) - x]
-  using adaptive ODE integration (OrdinaryDiffEq.jl).
+  S(x) = m(x) + S and fixed symmetric positive-definite matrix M.
+  Integrates the continuous-time dynamics
+  dx/dt = lambda * [P_{S(x),M^{-1}}(x - alpha * M * F(x)) - x]
+  (projection in the M^{-1} metric) by adaptive ODE integration
+  (OrdinaryDiffEq.jl) and by a discrete Krasnosel'skii-Mann iteration;
+  sparse obstacle-type projections are computed by a KKT-verified
+  primal-dual active-set method.
 type: software
 authors:
   - family-names: Alshahrani
@@ -21,7 +25,8 @@ authors:
     affiliation: "King Fahd University of Petroleum and Minerals"
 repository-code: "https://github.com/mmogib/SPNN-QVI"
 license: MIT
-version: "1.0.0"
+version: "1.1.0"
+date-released: "2026-07-24"
 keywords:
   - quasi-variational inequality
   - projection neural network
@@ -41,4 +46,4 @@ preferred-citation:
       orcid: "https://orcid.org/0000-0002-0707-7372"
   journal: "Neural Networks"
   year: 2026
-  notes: "Submitted"
+  notes: "Submitted; under revision (NEUNET-D-26-02955)"

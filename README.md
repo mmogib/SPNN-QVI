@@ -12,9 +12,9 @@ Julia implementation accompanying the paper
 
 The solver integrates the continuous-time scaled projection neural network
 
-$$\frac{dx}{dt} = \lambda \bigl[P_{\mathfrak{S}(x),M}\bigl(x - \alpha\,M\,F(x)\bigr) - x\bigr],$$
+$$\frac{dx}{dt} = \lambda \bigl[P_{\mathfrak{S}(x),M^{-1}}\bigl(x - \alpha\,M\,F(x)\bigr) - x\bigr],$$
 
-where $\mathfrak{S}(x) = m(x) + \mathcal{S}$ is a state-dependent constraint set and $M$ is a fixed symmetric positive-definite metric matrix. Adaptive ODE integration is performed via `OrdinaryDiffEq.jl` (Tsit5 by default, AutoTsit5/Rosenbrock23 for stiff problems).
+where $\mathfrak{S}(x) = m(x) + \mathcal{S}$ is a state-dependent constraint set, $M$ is a fixed symmetric positive-definite matrix, and the projection is taken in the metric induced by $M^{-1}$. Adaptive ODE integration is performed via `OrdinaryDiffEq.jl` (Tsit5 by default; AutoTsit5/Rosenbrock23 in the extreme-step stress test); a discrete Krasnosel'skii–Mann iteration is also provided.
 
 ## Repository layout
 
@@ -22,21 +22,24 @@ where $\mathfrak{S}(x) = m(x) + \mathcal{S}$ is a state-dependent constraint set
 src/           Julia module SPNNQVI
   SPNNQVI.jl   Entry module (includes + exports)
   types.jl     QVIProblem, SolverConfig, SolverResult
-  solver.jl    Core dynamics: solve_qvi (Euler), solve_qvi_diffeq (adaptive)
-  projection.jl Metric projection via coordinate descent
+  solver.jl    Core dynamics: solve_qvi (Euler), solve_qvi_diffeq (adaptive),
+               solve_qvi_fixedpoint (discrete KM iteration)
+  projection.jl Metric projection: coordinate descent; KKT-verified
+               primal-dual active-set method for sparse obstacle-type sets
   problems.jl  9 QVI problem definitions
   utils.jl     Residual, Lyapunov, time_to_tol
   io_utils.jl  TeeIO logging, CSV export
 test/          Test suite
-scripts/       Experiment scripts (s10 .. s70)
+scripts/       Experiment scripts (s10 .. s72)
 results/       Output directory (contents git-ignored)
 ```
 
 ## Requirements
 
 - Julia 1.10 or later
-- Dependencies are pinned in `Manifest.toml` for exact reproducibility.
-  Experienced users may regenerate them from `Project.toml` if they prefer.
+- Dependencies are declared in `Project.toml` (with compatibility bounds);
+  `Pkg.instantiate()` resolves them. The `Manifest.toml` shipped with each
+  release archive records the exact versions used for the reported runs.
 
 ## Reproducing the experiments
 
@@ -53,13 +56,19 @@ julia --project=. scripts/s20_example1.jl
 julia --project=. scripts/s30_example2.jl
 julia --project=. scripts/s35_contraction_sweep.jl
 julia --project=. scripts/s36_stepsize_sweep.jl
+julia --project=. scripts/s37_rate_vs_rho.jl
 julia --project=. scripts/s40_random_benchmark.jl
 julia --project=. scripts/s55_beyond_theory.jl
 julia --project=. scripts/s60_obstacle.jl
+julia --project=. scripts/s61_obstacle_finegrid.jl --large
 julia --project=. scripts/s62_gnep.jl
+julia --project=. scripts/s63_obstacle_mI_alpha_sweep.jl
 julia --project=. scripts/s64_nonlinear.jl
 julia --project=. scripts/s66_scaling.jl
 julia --project=. scripts/s68_noor_comparison.jl
+julia --project=. scripts/s72_baselines.jl
+julia --project=. scripts/s72_baselines.jl --tighter   # paired tolerance audit
+julia --project=. scripts/s37_rate_vs_rho.jl --tighter # paired tolerance audit
 
 # generate paper figures (7 PDFs via PGFPlotsX)
 julia --project=. scripts/s70_figures.jl
@@ -69,6 +78,15 @@ julia --project=. test/runtests.jl
 ```
 
 Each script writes a CSV and a log into the matching subfolder under `results/`.
+The production scripts (`s61`, `s72`) additionally write a transactional run
+manifest (`manifest*.txt`: SHA-256 hashes of the loaded sources, the full
+protocol configuration, and, on clean completion, the output-CSV hashes), so
+every regenerated table is traceable to the exact code and settings that
+produced it. The paper's revised Experiment 5 corresponds to
+`s61_obstacle_finegrid.jl --large`, Experiment 9 to `s72_baselines.jl` and its
+`--tighter` audit, the step-size sweep of Experiment 5 to
+`s63_obstacle_mI_alpha_sweep.jl`, and the response letter's rate study to
+`s37_rate_vs_rho.jl` (+ `--tighter`).
 
 ## Problems implemented
 
@@ -81,7 +99,7 @@ Each script writes a CSV and a log into the matching subfolder under `results/`.
 | 6  | GNEP Cournot duopoly  | 2     | Harker 1991; Facchinei–Kanzow 2010 |
 | 7  | Nonlinear monotone    | 5     | Xia–Wang 2004; Hu–Wang 2006      |
 | 8  | Random high-dim       | 10–50 | Solodov–Tseng 1996               |
-| 9  | Noor 2003 Example 4.1 | 2     | Noor 2003                        |
+| 9  | Nonlinear orthant benchmark | 2 | adapted from the Noor 2003 setting |
 
 ## Citation
 
@@ -95,7 +113,7 @@ If you use this code, please cite both the software and the paper.
   title   = {{SPNN-QVI: Scaled Projection Neural Network for
              Quasi-Variational Inequalities}},
   year    = {2026},
-  version = {1.0.0},
+  version = {1.1.0},
   doi     = {10.5281/zenodo.19687760},
   url     = {https://doi.org/10.5281/zenodo.19687760}
 }

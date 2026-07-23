@@ -78,8 +78,9 @@ PROBLEM_REGISTRY[1] = function(; κ::Float64=50.0, ϕ::Float64=π/6, δ::Float64
 
     x0 = [0.9, -0.8]  # corner-ish start
 
+    kappa_str = isinteger(κ) ? string(Int(κ)) : string(κ)
     QVIProblem(F=F, m=m, proj_S=proj_S, M=M, x0=x0, n=n,
-              name="affine_2d_$(metric)_kappa$(Int(κ))_delta$(δ)")
+              name="affine_2d_$(metric)_kappa$(kappa_str)_delta$(δ)")
 end
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -173,12 +174,13 @@ end
 # Problem 5: Discretized Obstacle QVI (1D membrane)
 # ══════════════════════════════════════════════════════════════════════════
 #
-# Implicit obstacle QVI: 1D elastic membrane over a reactive (elastic) substrate.
+# Implicit obstacle QVI: 1D elastic membrane over a responsive substrate
+# (an illustrative author-constructed model; see the manuscript's Exp 5).
 # The substrate deforms in response to the membrane's mean displacement:
 #   obstacle height ψ(x) = δ·mean(x) + ψ₀
-# where δ < 1 is the substrate-to-membrane stiffness ratio.
 # This creates a genuine QVI: K(x) = m(x) + S where m(x) = δ·mean(x)·1_n
-# and S = {v : v ≥ ψ₀}. The contraction K_m = δ/√n < δ < 1.
+# and S = {v : v ≥ ψ₀}. The contraction constant is K_m = δ < 1 (exact,
+# attained at perturbations proportional to 1_n).
 #
 # Physical motivation: Noor (1988) cites implicit obstacle boundary value problems
 # as the canonical application of the translative QVI K(u) = m(u) + K.
@@ -189,7 +191,9 @@ end
 # Base obstacle: ψ₀_i = 0.2·sin(π·xᵢ), S = {x : x ≥ ψ₀}.
 # m(x)_i = δ·mean(x) (contraction: constant shift by average).
 # ──────────────────────────────────────────────────────────────────────────
-PROBLEM_REGISTRY[5] = function(; n::Int=20, δ::Float64=0.1, metric::Symbol=:identity)
+PROBLEM_REGISTRY[5] = function(; n::Int=20, δ::Float64=0.1, metric::Symbol=:identity,
+                                 sparse_impl::Bool = n > 100)
+    sparse_impl && return _obstacle_sparse(n, δ, metric)
     h = 1.0 / (n + 1)
     grid = [i * h for i in 1:n]
 
@@ -214,7 +218,7 @@ PROBLEM_REGISTRY[5] = function(; n::Int=20, δ::Float64=0.1, metric::Symbol=:ide
     # S = {x : x ≥ ψ₀} — projection clamps each component from below
     proj_S(z) = max.(z, ψ0)
 
-    # Translation: m(x)_i = δ·mean(x) (constant vector, Lipschitz with K_m = δ/√n < 1)
+    # Translation: m(x)_i = δ·mean(x) (constant vector; Lipschitz constant K_m = δ)
     m(x) = fill(δ * mean(x), n)
 
     # Metric
@@ -235,6 +239,57 @@ PROBLEM_REGISTRY[5] = function(; n::Int=20, δ::Float64=0.1, metric::Symbol=:ide
               name="obstacle_$(n)d_$(metric)_delta$(δ)")
 end
 
+"""
+Sparse/operator implementation of the obstacle QVI (Problem 5) for fine grids.
+Same mathematical problem as the dense variant; the stiffness matrix is stored
+sparse, F is an O(n) matvec, and the metric options avoid dense inverses:
+  :identity → M = I (Diagonal),      projection = componentwise clamp
+  :jacobi   → M = diag(A)⁻¹,         projection = componentwise clamp
+  :Ainv     → M = A⁻¹ via a sparse Cholesky factorization (FactorInverse);
+              projection metric M⁻¹ = A (sparse) via the primal-dual
+              active-set method, verified to KKT tolerance (fail-closed).
+Analytic spectral data of A = (1/h²)tridiag(-1,2,-1):
+  λ_min = (4/h²)sin²(πh/2),  λ_max = (4/h²)cos²(πh/2).
+"""
+function _obstacle_sparse(n::Int, δ::Float64, metric::Symbol)
+    h = 1.0 / (n + 1)
+    grid = [i * h for i in 1:n]
+
+    A = spdiagm(-1 => fill(-1.0 / h^2, n - 1),
+                 0 => fill( 2.0 / h^2, n),
+                 1 => fill(-1.0 / h^2, n - 1))
+    λmin_A = (4.0 / h^2) * sin(π * h / 2)^2
+    λmax_A = (4.0 / h^2) * cos(π * h / 2)^2
+
+    f_load = ones(n)
+    F(x) = A * x - f_load
+
+    ψ0 = 0.2 * sin.(π * grid)
+    proj_S(z) = max.(z, ψ0)
+    m(x) = fill(δ * mean(x), n)
+
+    lb = copy(ψ0)
+    ub = fill(Inf, n)
+
+    M, Minv, Mnorm = if metric == :identity
+        Diagonal(ones(n)), Diagonal(ones(n)), 1.0
+    elseif metric == :jacobi
+        d = h^2 / 2.0
+        Diagonal(fill(d, n)), Diagonal(fill(1.0 / d, n)), d
+    elseif metric == :Ainv
+        fact = cholesky(Symmetric(A))
+        FactorInverse(fact, n, 1.0 / λmin_A), A, 1.0 / λmin_A
+    else
+        Diagonal(ones(n)), Diagonal(ones(n)), 1.0
+    end
+
+    x0 = 0.5 * (ψ0 .+ 1.0)
+
+    QVIProblem(F=F, m=m, proj_S=proj_S, M=M, x0=x0, n=n,
+               name="obstacle_sparse_$(n)d_$(metric)_delta$(δ)",
+               Minv=Minv, lb=lb, ub=ub, Mnorm=Mnorm)
+end
+
 # ══════════════════════════════════════════════════════════════════════════
 # Problem 6: GNEP — Cournot Duopoly
 # ══════════════════════════════════════════════════════════════════════════
@@ -244,10 +299,13 @@ end
 # F = pseudo-gradient (VI convention: F = -∇profit).
 # S = {x : 0 ≤ xᵢ ≤ capacity, x₁ + x₂ ≤ total_cap}.
 #
-# The translation m(x) = δ·x models capacity erosion: a fraction δ of each player's
-# current production is committed/locked, reducing effective feasible capacity.
-# This makes the QVI genuinely quasi — the feasible set shrinks as production increases.
-# K_m = δ < 1 ensures the erosion is a contraction.
+# The translation m(x) = δ·x models committed production: a fraction δ of each
+# player's current output is pre-committed (e.g. under bilateral contracts) and
+# S is read as residual-market quotas — per-firm and aggregate limits on the
+# uncommitted output (1-δ)x — so feasibility x ∈ m(x) + S shifts the admissible
+# set with the state, making the QVI genuinely quasi. A stylized jointly
+# constrained Cournot model (not a player-wise generalized Nash derivation).
+# K_m = δ < 1 ensures the translation is a contraction.
 # ──────────────────────────────────────────────────────────────────────────
 PROBLEM_REGISTRY[6] = function(; d::Float64=20.0, λ_p::Float64=4.0, ρ::Float64=1.0,
                                  c1::Float64=1.0, c2::Float64=2.0,
@@ -269,26 +327,18 @@ PROBLEM_REGISTRY[6] = function(; d::Float64=20.0, λ_p::Float64=4.0, ρ::Float64
     m(x) = δ * x
 
     # S = {x : 0 ≤ xᵢ ≤ capacity, x₁+x₂ ≤ total_cap}
-    # Projection: first clamp to box, then if sum exceeds total_cap, project onto simplex cap
+    # EXACT Euclidean projection (2-D): if the box clamp satisfies the shared
+    # constraint it is the projection; otherwise the capacity face is active
+    # and the projection is the clamped foot point on that segment.
     function proj_S(z)
         y = clamp.(z, 0.0, capacity)
-        if y[1] + y[2] > total_cap
-            # Project onto x₁+x₂ = total_cap within the box
-            # Reduce proportionally
-            excess = y[1] + y[2] - total_cap
-            # Alternating projection: subtract excess/2 from each, re-clamp
-            for _ in 1:20  # few iterations suffice
-                y_old = copy(y)
-                s = y[1] + y[2]
-                if s > total_cap
-                    # Project onto x₁+x₂ ≤ total_cap
-                    y .= y .- (s - total_cap) / 2
-                end
-                y .= clamp.(y, 0.0, capacity)
-                norm(y - y_old) < 1e-14 && break
-            end
+        if y[1] + y[2] <= total_cap
+            return y
         end
-        return y
+        lo = max(0.0, total_cap - capacity)
+        hi = min(capacity, total_cap)
+        y1 = clamp((z[1] - z[2] + total_cap) / 2, lo, hi)
+        return [y1, total_cap - y1]
     end
 
     # Metric
@@ -351,14 +401,18 @@ PROBLEM_REGISTRY[7] = function(; n::Int=5, ρ_nl::Float64=1.0, δ::Float64=0.1,
     ub = 5.0 * ones(n)
     proj_S(z) = proj_box(z, lb, ub)
 
-    # Metric
+    # Metric (with caches for the diagonal fast path)
     M = if metric == :identity
         Matrix{Float64}(I, n, n)
     elseif metric == :Qinv
         Matrix{Float64}(inv(Q))
+    elseif metric == :diag_inv
+        Diagonal(1.0 ./ diag(Q)) |> Matrix{Float64}   # Jacobi recipe: diag(sym part)⁻¹
     else
         Matrix{Float64}(I, n, n)
     end
+    Minv_c  = metric == :diag_inv ? Diagonal(Vector{Float64}(diag(Q))) : nothing
+    Mnorm_c = metric == :diag_inv ? maximum(1.0 ./ diag(Q)) : NaN
 
     # Initial point: near boundary
     x0 = [4.5, 0.5, 4.5, 0.5, 4.5]
@@ -367,7 +421,8 @@ PROBLEM_REGISTRY[7] = function(; n::Int=5, ρ_nl::Float64=1.0, δ::Float64=0.1,
     end
 
     QVIProblem(F=F, m=m, proj_S=proj_S, M=M, x0=x0, n=n,
-              name="nonlinear_monotone_$(n)d_$(metric)_delta$(δ)")
+              name="nonlinear_monotone_$(n)d_$(metric)_delta$(δ)",
+              Minv=Minv_c, lb=lb, ub=ub, Mnorm=Mnorm_c)
 end
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -414,7 +469,7 @@ PROBLEM_REGISTRY[8] = function(; n::Int=50, δ::Float64=0.1, seed::Int=1234,
     # Symmetric part of Q_op for preconditioning
     D_full = Matrix{Float64}(D_sym)
 
-    # Metric
+    # Metric (with caches for the diagonal fast path)
     M = if metric == :identity
         Matrix{Float64}(I, n, n)
     elseif metric == :Dinv
@@ -424,29 +479,35 @@ PROBLEM_REGISTRY[8] = function(; n::Int=50, δ::Float64=0.1, seed::Int=1234,
     else
         Matrix{Float64}(I, n, n)
     end
+    Minv_c  = metric == :diag_inv ? Diagonal(Vector{Float64}(diag(Q_op))) : nothing
+    Mnorm_c = metric == :diag_inv ? maximum(1.0 ./ diag(Q_op)) : NaN
 
     # Initial point: random in box
     x0 = 10.0 * rand(rng, n)
 
     QVIProblem(F=F, m=m, proj_S=proj_S, M=M, x0=x0, n=n,
-              name="random_highdim_$(n)d_$(metric)_delta$(δ)")
+              name="random_highdim_$(n)d_$(metric)_delta$(δ)",
+              Minv=Minv_c, lb=lb, ub=ub, Mnorm=Mnorm_c)
 end
 
 # ══════════════════════════════════════════════════════════════════════════
-# Problem 9: Noor (2003, Example 4.1) — QVI on ℝ²₊
+# Problem 9: Nonlinear orthant QVI benchmark (manuscript Experiment 4)
 # ══════════════════════════════════════════════════════════════════════════
 #
-# From: M.A. Noor, "Merit functions for quasi variational inequalities,"
-#       J. Math. Inequal. Appl. 6(1), 2003.
+# Attribution RESOLVED (2026-07-22): the example appears in NEITHER Noor 2003
+# ("Implicit dynamical systems...", AMC 134) NOR Noor 2007 ("On merit functions
+# for quasivariational inequalities", J. Math. Inequal. 1(2) — checked in full).
+# The original code comment's attribution was erroneous. The manuscript
+# presents this as an author-adapted nonlinear benchmark in the setting of
+# Noor's Euclidean QVI dynamics, which is accurate.
 #
 # F(u) = (u₁ + u₂ + sin(u₁), u₁ + u₂ + sin(u₂))
 # K = ℝ²₊ = {x : x ≥ 0} (nonneg. orthant), so S = ℝ²₊, proj_S(z) = max.(z, 0)
 # m(u) = u/8 (contraction, K_m = 1/8 = 0.125)
 # Solution: ū = (0, 0) [verifiable: F(0)=(0,0), ⟨F(0),y-0⟩ = 0 ≥ 0 ∀y ≥ 0]
 # M = I (Euclidean metric)
-#
-# This is the ONLY numerical example from Noor (2003), allowing direct
-# comparison with his projection method for QVI.
+# NOTE: F is strongly monotone near ū but NOT globally monotone on ℝ²₊
+# (symmetrized Jacobian has eigenvalue -1 at (π,π)).
 # ──────────────────────────────────────────────────────────────────────────
 PROBLEM_REGISTRY[9] = function(;)
     n = 2
@@ -470,5 +531,5 @@ PROBLEM_REGISTRY[9] = function(;)
     x0 = [1.0, 1.0]
 
     QVIProblem(F=F, m=m, proj_S=proj_S, M=M, x0=x0, n=n,
-              name="noor2003_example")
+              name="nonlinear_orthant_benchmark")
 end
